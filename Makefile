@@ -8,8 +8,8 @@ OUT_DIR     := out
 INC_DIR     := ./include
 LIB_DIR     := ./lib
 
-BPF_OBJ     := $(OUT_DIR)/hello.bpf.o
-USER_BIN    := $(OUT_DIR)/hello_android
+BPF_OBJ     := $(OUT_DIR)/nkbinder.bpf.o
+USER_BIN    := $(OUT_DIR)/nkbinder
 
 BPF_CFLAGS  := -target bpf -g -O2 \
                --sysroot=$(SYSROOT) \
@@ -28,11 +28,11 @@ all: prepare $(BPF_OBJ) $(USER_BIN)
 prepare:
 	@mkdir -p $(OUT_DIR)
 
-$(BPF_OBJ): $(SRC_DIR)/hello.bpf.c
+$(BPF_OBJ): $(SRC_DIR)/nkbinder.bpf.c
 	@echo "[+] Compiling BPF program: $@"
 	$(CLANG) $(BPF_CFLAGS) -c $< -o $@
 
-$(USER_BIN): $(SRC_DIR)/hello.c
+$(USER_BIN): $(SRC_DIR)/nkbinder.c
 	@echo "[+] Compiling User-space loader: $@"
 	$(TARGET_CC) $(USER_CFLAGS) $< $(USER_LDFLAGS) -o $@
 
