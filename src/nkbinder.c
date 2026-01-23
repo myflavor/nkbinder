@@ -122,7 +122,6 @@ int main()
         goto cleanup;
     }
 
-// 4. 初始化缓冲区
 #ifdef RING_BUFFER
     map_fd = bpf_object__find_map_fd_by_name(obj, "rb");
     rb = ring_buffer__new(map_fd, handle_event, &client_fd, NULL);
