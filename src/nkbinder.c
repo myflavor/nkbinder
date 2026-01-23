@@ -84,7 +84,7 @@ int main()
     struct bpf_program *prog = NULL;
     int server_fd = -1;
     int client_fd = -1;
-    int map_fd;
+    int map_fd = -1;
 
     signal(SIGINT, sig_handler);
 
