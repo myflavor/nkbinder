@@ -43,9 +43,12 @@ struct binder_transaction_args
     int debug_id;
     int target_node;
     int to_proc;
+    int to_thread;
+    int reply;
     unsigned int code;
     unsigned int flags;
 };
+
 
 SEC("tracepoint/binder/binder_transaction")
 int tp_binder_transaction(struct binder_transaction_args *args)
