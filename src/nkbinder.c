@@ -44,15 +44,37 @@ int setup_socket_server()
 static int handle_event(void *ctx, void *data, size_t data_sz)
 {
     int *client_fd_ptr = (int *)ctx;
-    struct binder_transaction_event *e = (struct binder_transaction_event *)data;
-    if (e->flags & TF_ONE_WAY)
-        return 0;
-
+    struct nkbinder_event *e = (struct nkbinder_event *)data;
     char buffer[MESSAGE_LENGTH];
-    int n = snprintf(buffer, sizeof(buffer), "type=syncBinder from_uid=%d from_pid=%d to_pid=%d code=%u",
-                     e->from_uid, e->from_pid, e->to_pid, e->code);
+    int n = 0;
 
-    if (n < MESSAGE_LENGTH - 1)
+    if (e->type == TYPE_BINDER)
+    {
+        if (e->binder.flags & TF_ONE_WAY)
+            return 0;
+
+        n = snprintf(buffer, sizeof(buffer),
+                     "type=syncBinder from_uid=%d from_pid=%d to_pid=%d code=%u",
+                     e->binder.from_uid, e->binder.from_pid, e->binder.to_pid, e->binder.code);
+
+        printf("[DEBUG] BINDER: from_pid:%d -> to_pid:%d\n",
+               e->binder.from_pid, e->binder.to_pid);
+    }
+    else if (e->type == TYPE_SIGNAL)
+    {
+        n = snprintf(buffer, sizeof(buffer),
+                     "type=signal from_pid=%d to_pid=%d signal=%d",
+                     e->signal.from_pid, e->signal.to_pid, e->signal.signal);
+
+        printf("[DEBUG] SIGNAL: %d sent sig %d to %d\n",
+               e->signal.from_pid, e->signal.signal, e->signal.to_pid);
+    }
+    else
+    {
+        return 0;
+    }
+
+    if (n > 0 && n < MESSAGE_LENGTH - 1)
     {
         memset(buffer + n, ' ', MESSAGE_LENGTH - n - 1);
         buffer[MESSAGE_LENGTH - 1] = '\n';
@@ -66,7 +88,6 @@ static int handle_event(void *ctx, void *data, size_t data_sz)
             *client_fd_ptr = -1;
         }
     }
-    printf("[DEBUG] from_pid:%d -> to_pid:%d\n", e->from_pid, e->to_pid);
     return 0;
 }
 
@@ -78,10 +99,12 @@ void handle_perf_event(void *ctx, int cpu, void *data, __u32 size)
 int main()
 {
     struct bpf_object *obj = NULL;
-    struct bpf_link *link = NULL;
     struct ring_buffer *rb = NULL;
     struct perf_buffer *pb = NULL;
-    struct bpf_program *prog = NULL;
+    struct bpf_program *prog_binder = NULL;
+    struct bpf_program *prog_signal = NULL;
+    struct bpf_link *link_binder = NULL;
+    struct bpf_link *link_signal = NULL;
     int server_fd = -1;
     int client_fd = -1;
     int map_fd = -1;
@@ -108,17 +131,40 @@ int main()
         goto cleanup;
     }
 
-    prog = bpf_object__find_program_by_name(obj, "tp_binder_transaction");
-    if (!prog)
+    prog_binder = bpf_object__find_program_by_name(obj, "tp_binder_transaction");
+    prog_signal = bpf_object__find_program_by_name(obj, "handle_signal_gen");
+
+    if (prog_binder)
     {
-        fprintf(stderr, "[-] Program not found\n");
-        goto cleanup;
+        link_binder = bpf_program__attach(prog_binder);
+        if (libbpf_get_error(link_binder))
+        {
+            fprintf(stderr, "[-] Failed to attach Binder: %s\n", strerror(errno));
+            link_binder = NULL;
+        }
+        else
+        {
+            printf("[+] Attached Binder Tracepoint\n");
+        }
     }
 
-    link = bpf_program__attach(prog);
-    if (libbpf_get_error(link))
+    if (prog_signal)
     {
-        fprintf(stderr, "[-] Failed to attach\n");
+        link_signal = bpf_program__attach(prog_signal);
+        if (libbpf_get_error(link_signal))
+        {
+            fprintf(stderr, "[-] Failed to attach Signal: %s\n", strerror(errno));
+            link_signal = NULL;
+        }
+        else
+        {
+            printf("[+] Attached Signal Tracepoint\n");
+        }
+    }
+
+    if (!link_binder && !link_signal)
+    {
+        fprintf(stderr, "[-] Critical: No programs attached. Exiting.\n");
         goto cleanup;
     }
 
@@ -174,8 +220,10 @@ cleanup:
         ring_buffer__free(rb);
     if (pb)
         perf_buffer__free(pb);
-    if (link)
-        bpf_link__destroy(link);
+    if (link_binder)
+        bpf_link__destroy(link_binder);
+    if (link_signal)
+        bpf_link__destroy(link_signal);
     if (obj)
         bpf_object__close(obj);
     return 0;

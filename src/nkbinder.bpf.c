@@ -21,14 +21,28 @@ struct
 } rb SEC(".maps");
 #endif
 
+static __always_inline void send_event(void *ctx, struct nkbinder_event *ev)
+{
+#ifdef PERF_BUFFER
+    bpf_perf_event_output(ctx, &pb, BPF_F_CURRENT_CPU, ev, sizeof(*ev));
+#endif
+
+#ifdef RING_BUFFER
+    struct nkbinder_event *data = bpf_ringbuf_reserve(&rb, sizeof(*ev), 0);
+    if (data)
+    {
+        __builtin_memcpy(data, ev, sizeof(*ev));
+        bpf_ringbuf_submit(data, 0);
+    }
+#endif
+}
+
 struct binder_transaction_args
 {
     unsigned long long ignore;
     int debug_id;
     int target_node;
     int to_proc;
-    int to_thread;
-    int reply;
     unsigned int code;
     unsigned int flags;
 };
@@ -36,33 +50,44 @@ struct binder_transaction_args
 SEC("tracepoint/binder/binder_transaction")
 int tp_binder_transaction(struct binder_transaction_args *args)
 {
-    __u64 uid_gid = bpf_get_current_uid_gid();
-    __u32 uid = (__u32)uid_gid;
-    __u64 pid_tgid = bpf_get_current_pid_tgid();
-    __u32 pid = (__u32)(pid_tgid >> 32);
+    struct nkbinder_event ev = {};
 
-    struct binder_transaction_event event = {};
-    event.from_uid = uid;
-    event.from_pid = pid;
-    event.to_pid = args->to_proc;
-    event.code = args->code;
-    event.flags = args->flags;
+    ev.type = TYPE_BINDER;
+    ev.binder.from_uid = (int)bpf_get_current_uid_gid();
+    ev.binder.from_pid = (int)(bpf_get_current_pid_tgid() >> 32);
+    ev.binder.to_pid = args->to_proc;
+    ev.binder.code = args->code;
+    ev.binder.flags = args->flags;
 
-    int debug_id = args->debug_id;
+    send_event(args, &ev);
+    return 0;
+}
 
-#ifdef PERF_BUFFER
-    bpf_perf_event_output(args, &pb, BPF_F_CURRENT_CPU, &event, sizeof(event));
-#endif
+struct tp_signal_generate_ctx
+{
+    unsigned short common_type;
+    unsigned char common_flags;
+    unsigned char common_preempt_count;
+    int common_pid;
+    int sig;
+    int errno;
+    int code;
+    char comm[16];
+    int pid;
+    int group;
+    int result;
+};
 
-#ifdef RING_BUFFER
-    void *data = bpf_ringbuf_reserve(&rb, sizeof(event), 0);
-    if (data)
-    {
-        __builtin_memcpy(data, &event, sizeof(event));
-        bpf_ringbuf_submit(data, 0);
-    }
-#endif
+SEC("tracepoint/signal/signal_generate")
+int handle_signal_gen(struct tp_signal_generate_ctx *ctx)
+{
+    struct nkbinder_event ev = {};
+    ev.type = TYPE_SIGNAL;
+    ev.signal.from_pid = (int)(bpf_get_current_pid_tgid() >> 32);
+    ev.signal.to_pid = ctx->pid;
+    ev.signal.signal = ctx->sig;
 
+    send_event(ctx, &ev);
     return 0;
 }
 
