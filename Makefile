@@ -1,20 +1,23 @@
+ARCH ?= aarch64
+
 NDK_PATH    := $(HOME)/sdk/android-ndk-r27d
 CLANG       := $(NDK_PATH)/toolchains/llvm/prebuilt/linux-x86_64/bin/clang
-TARGET_CC   := $(NDK_PATH)/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android35-clang
+TARGET_CC   := $(NDK_PATH)/toolchains/llvm/prebuilt/linux-x86_64/bin/$(ARCH)-linux-android35-clang
 SYSROOT     := $(NDK_PATH)/toolchains/llvm/prebuilt/linux-x86_64/sysroot
 
 SRC_DIR     := src
 OUT_DIR     := out
 INC_DIR     := ./include
-LIB_DIR     := ./lib
+LIB_DIR     := ./lib/$(ARCH)
+
 
 BPF_OBJ     := $(OUT_DIR)/nkbinder.bpf.o
-USER_BIN    := $(OUT_DIR)/nkbinder
+USER_BIN    := $(OUT_DIR)/nkbinder_$(ARCH)
 
 BPF_CFLAGS  := -target bpf -g -O2 \
                --sysroot=$(SYSROOT) \
                -I$(SYSROOT)/usr/include \
-               -I$(SYSROOT)/usr/include/aarch64-linux-android \
+               -I$(SYSROOT)/usr/include/$(ARCH)-linux-android \
                -I$(INC_DIR) \
                -I$(SRC_DIR)
 
