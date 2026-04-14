@@ -38,22 +38,41 @@ void sig_handler(int sig) { running = 0; }
 int setup_socket_server()
 {
     int server_fd = socket(AF_LOCAL, SOCK_STREAM, 0);
-    if (server_fd < 0)
+    if (server_fd < 0) {
+        fprintf(stderr, "[-] socket() failed: %s\n", strerror(errno));
         return -1;
+    }
 
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_LOCAL;
+
+    /* Try abstract socket first (Android usual), fallback to file-based */
     addr.sun_path[0] = 0;
     strncpy(addr.sun_path + 1, SOCKET_NAME, sizeof(addr.sun_path) - 2);
     int len = 1 + strlen(SOCKET_NAME) + offsetof(struct sockaddr_un, sun_path);
 
-    if (bind(server_fd, (struct sockaddr *)&addr, len) < 0)
-    {
+    if (bind(server_fd, (struct sockaddr *)&addr, len) < 0) {
+        /* Try file-based socket as fallback */
+        unlink("/dev/socket/" SOCKET_NAME);
+        strncpy(addr.sun_path, "/dev/socket/" SOCKET_NAME, sizeof(addr.sun_path) - 1);
+        len = sizeof(addr);
+        addr.sun_path[sizeof(addr.sun_path) - 1] = 0;
+
+        if (bind(server_fd, (struct sockaddr *)&addr, len) < 0) {
+            fprintf(stderr, "[-] bind() failed: %s\n", strerror(errno));
+            close(server_fd);
+            return -1;
+        }
+        fprintf(stderr, "[+] Using file-based socket: %s\n", addr.sun_path);
+    }
+
+    if (listen(server_fd, 5) < 0) {
+        fprintf(stderr, "[-] listen() failed: %s\n", strerror(errno));
         close(server_fd);
         return -1;
     }
-    listen(server_fd, 5);
+
     fcntl(server_fd, F_SETFL, fcntl(server_fd, F_GETFL, 0) | O_NONBLOCK);
     return server_fd;
 }
@@ -211,15 +230,19 @@ int main(int argc, char *argv[])
     int raw_sock = -1;
     const char *ifname = NULL;
 
+    fprintf(stderr, "[+] nkbinder starting...\n");
+
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
 
     bump_rlimit();
+    fprintf(stderr, "[+] rlimit set\n");
 
     /* Parse optional interface name */
     if (argc > 1)
         ifname = argv[1];
 
+    fprintf(stderr, "[+] Setting up socket server...\n");
     server_fd = setup_socket_server();
     if (server_fd < 0)
     {
