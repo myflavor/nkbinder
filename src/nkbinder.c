@@ -14,7 +14,7 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
-#include <netinet/if_ether.h>
+#include <linux/if_ether.h>
 #include <linux/bpf.h>
 #include <linux/if_packet.h>
 #include <net/if.h>
@@ -22,6 +22,11 @@
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include "nkbinder.h"
+
+/* ETH_P_ALL definition missing in Android NDK */
+#ifndef ETH_P_ALL
+#define ETH_P_ALL  0x0003
+#endif
 
 #define SOCKET_NAME "nkbinder"
 #define MESSAGE_LENGTH 128
