@@ -2,12 +2,11 @@
  * nkbinder_network.bpf.c
  * Network packet notification for nkbinder - eBPF non-CO-RE implementation
  *
- * This uses BPF_PROG_TYPE_SOCKET_FILTER with stable BPF helper functions:
+ * Uses BPF_PROG_TYPE_SOCKET_FILTER with stable BPF helper functions:
  *   - bpf_get_socket_uid() - get UID from socket
- *   - bpf_skb_load_bytes() - load packet bytes
- *   - bpf_skb_protocol() - get L3 protocol
+ *   - bpf_skb_load_bytes() - load packet bytes (manual IP header parsing)
  *
- * No CO-RE required - these helpers abstract kernel struct layouts internally.
+ * No CO-RE required - IP header is parsed manually using bpf_skb_load_bytes.
  */
 
 #include <linux/bpf.h>
@@ -48,14 +47,12 @@ int nkbinder_sock_filter(struct __sk_buff *skb)
     if (uid < MIN_USERAPP_UID)
         return 0;
 
-    /* Get network protocol */
-    proto = bpf_skb_protocol(skb);
-    if (proto != IPPROTO_TCP && proto != IPPROTO_UDP)
-        return 0;
+    /* TCP/UDP check will be done after IP header is parsed */
 
     /*
-     * Load first 4 bytes to determine IP version and parse header.
-     * Using bpf_skb_load_bytes which is a stable helper function.
+     * Load first 4 bytes to determine IP version and protocol.
+     * Byte 0: version(4bits) + IHL(4bits)
+     * Byte 1: DSCP(6bits) + ECN(2bits) = protocol
      */
     __u8 ip_hdr[4];
     err = bpf_skb_load_bytes(skb, 0, ip_hdr, sizeof(ip_hdr));
@@ -64,6 +61,12 @@ int nkbinder_sock_filter(struct __sk_buff *skb)
 
     /* Parse IP version from first nibble */
     ip_version = (ip_hdr[0] >> 4) & 0xF;
+    /* Protocol is in byte 1 */
+    proto = ip_hdr[1];
+
+    /* Only interested in TCP and UDP */
+    if (proto != IPPROTO_TCP && proto != IPPROTO_UDP)
+        return 0;
 
     if (ip_version == 4) {
         /* IPv4: standard header is 20 bytes (no options typically) */
