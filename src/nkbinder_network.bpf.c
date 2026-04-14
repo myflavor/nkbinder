@@ -31,7 +31,7 @@ struct {
  * Attaches to raw sockets and receives all packets.
  * Uses only stable BPF helper functions - NO CO-RE required.
  */
-SEC("socket_filter")
+SEC("sk_skb")
 int nkbinder_sock_filter(struct __sk_buff *skb)
 {
     struct nkbinder_event *event;
