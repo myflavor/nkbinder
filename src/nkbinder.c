@@ -9,12 +9,18 @@
 #include <signal.h>
 #include <stddef.h>
 #include <errno.h>
-#include <bpf/libbpf.h>
-#include <bpf/bpf.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+#include <netinet/udp.h>
+#include <netinet/if_ether.h>
 #include <linux/bpf.h>
 #include <linux/if_packet.h>
 #include <net/if.h>
 #include <sys/resource.h>
+#include <bpf/libbpf.h>
+#include <bpf/bpf.h>
 #include "nkbinder.h"
 
 #define SOCKET_NAME "nkbinder"
